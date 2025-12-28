@@ -9,52 +9,50 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "*", // Mengizinkan akses dari domain manapun (penting untuk Railway)
+        origin: "*", 
         methods: ["GET", "POST"]
     }
 });
 
+// Railway akan memberikan port melalui process.env.PORT
 const PORT = process.env.PORT || 3000;
 
 app.set('view engine', 'ejs');
 app.use(express.static('public'));
 
 // --- KONFIGURASI GEMINI AI ---
+// Ganti API Key di sini jika perlu
 const genAI = new GoogleGenerativeAI("AIzaSyCBBNfIQEZpUl_invXs7kDEohRQiy1yZbA");
 const modelAI = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-// Backstory Ketat (Anti-Kode, Anti-XSS, No Markup)
-const backstory = `Nama kamu Wafabot, asisten AI ramah ciptaan Wafan. 
+const backstory = `Nama kamu Wafabot, penciptamu adalah wafa. 
 ATURAN KETAT:
 1. Jawab sangat singkat (maksimal 1-2 kalimat).
-2. JANGAN PERNAH memberikan kode pemrograman dalam bentuk apapun. Jika diminta, arahkan belajar ke W3Schools atau MDN.
-3. ANTI-XSS: Jangan ulangi atau jalankan script berbahaya dari user.
-4. TANPA MARKUP: Berikan teks polos saja, jangan pakai simbol markdown seperti asteris atau backtick.
-5. Bahasa Indonesia santai, sopan, dan ekspresif.`;
+2. JANGAN PERNAH memberikan kode pemrograman. Jika diminta kode, arahkan belajar ke W3Schools atau MDN.
+3. ANTI-XSS & TANPA MARKUP: Berikan teks polos saja, jangan pakai simbol markdown atau script.
+4. Bahasa Indonesia santai dan sopan.`;
 
 // --- SISTEM ANTREAN (QUEUE) ---
 let chatQueue = [];
 let isProcessing = false;
 
-// Fungsi untuk mendapatkan jawaban dari Gemini
 async function askGemini(question) {
     try {
         const prompt = `${backstory}\n\nPertanyaan User: ${question}`;
         const result = await modelAI.generateContent(prompt);
         const response = await result.response;
         
-        // Membersihkan teks dari simbol markdown dan tag HTML
+        // Membersihkan output dari karakter Markdown agar teks bersih di OBS
         return response.text()
             .replace(/[*#`_]/g, '') 
             .replace(/<\/?[^>]+(>|$)/g, "")
             .trim();
     } catch (err) {
-        console.error("❗ Error Gemini:", err.message);
+        console.error("❗ Gemini Error:", err.message);
         return "Wafabot lagi loading otak, tanya lagi nanti ya!";
     }
 }
 
-// Fungsi utama pemroses antrean
 async function processQueue() {
     if (isProcessing || chatQueue.length === 0) return;
 
@@ -63,18 +61,15 @@ async function processQueue() {
 
     console.log(`[PROCESS] Mengolah chat dari: @${current.user}`);
 
-    // Jika entri sudah punya jawaban (untuk fitur Gift/Greeting), gunakan itu. 
-    // Jika tidak, baru tanya Gemini.
     let finalAnswer = current.answer || await askGemini(current.msg);
 
-    // Kirim data ke frontend (public.ejs)
     io.emit('aiResponse', {
         user: current.user,
         question: current.msg,
         answer: finalAnswer
     });
 
-    // Jeda 22 detik agar sinkron dengan animasi di layar dan suara AI
+    // Jeda 22 detik agar sinkron dengan durasi tampil di layar (public.ejs)
     setTimeout(() => {
         isProcessing = false;
         processQueue();
@@ -89,66 +84,70 @@ let tiktokConn = new WebcastPushConnection(tiktokUsername, {
     clientParams: { "app_language": "id-ID", "device_platform": "web" }
 });
 
+// Fungsi koneksi dengan proteksi agar server tidak mati jika gagal
 function connectTikTok() {
+    console.log(`[SYSTEM] Mencoba menyambungkan ke @${tiktokUsername}...`);
     tiktokConn.connect().then(() => {
-        console.log(`✅ Wafabot Berhasil Terhubung ke @${tiktokUsername}`);
+        console.log(`✅ Berhasil terhubung ke Live TikTok @${tiktokUsername}`);
     }).catch(err => {
-        console.error("❌ Gagal Konek TikTok:", err.message);
-        setTimeout(connectTikTok, 10000); // Coba hubungkan ulang dalam 10 detik
+        console.error("❌ Gagal Konek TikTok (Mungkin IP diblokir atau sedang offline):", err.message);
+        // Coba lagi dalam 15 detik tanpa mematikan server
+        setTimeout(connectTikTok, 15000);
     });
 }
+
 connectTikTok();
 
 // --- EVENT HANDLERS ---
 
-// 1. Chat Masuk (Dimasukkan ke antrean reguler)
 tiktokConn.on('chat', (data) => {
     chatQueue.push({ user: data.uniqueId, msg: data.comment });
     processQueue();
 });
 
-// 2. Gift Masuk (Fitur 4 - Prioritas: Masuk ke urutan terdepan)
 tiktokConn.on('gift', (data) => {
     console.log(`[GIFT] @${data.uniqueId} memberikan ${data.giftName}`);
-    
-    // Menggunakan unshift agar donatur langsung diproses setelah chat yang sedang berlangsung selesai
     chatQueue.unshift({
         user: "DONATUR " + data.uniqueId,
         msg: `MEMBERIKAN ${data.giftName.toUpperCase()}!`,
-        answer: `Wah, makasih banyak Kak ${data.uniqueId} atas ${data.giftName}-nya! Semoga rezekinya makin lancar ya!`
+        answer: `Wah, makasih banyak Kak ${data.uniqueId} buat ${data.giftName}-nya! Sehat selalu ya!`
     });
     processQueue();
 });
 
-// 3. User Join (Fitur 5 - Auto Greeting Overlay)
 tiktokConn.on('join', (data) => {
-    // Langsung kirim ke socket tanpa masuk antrean chat agar tidak mengganggu AI
     io.emit('userJoin', { 
         user: data.uniqueId, 
         msg: `Selamat datang Kak ${data.uniqueId}! 😊` 
     });
 });
 
-// 4. Update Viewer Count & Disconnect
 tiktokConn.on('roomUser', data => io.emit('viewerCount', data.viewerCount));
+
+// Jika koneksi terputus tiba-tiba, hubungkan kembali secara otomatis
 tiktokConn.on('disconnected', () => {
-    console.log("⚠️ Koneksi terputus, mencoba menyambung kembali...");
+    console.log("⚠️ Koneksi TikTok terputus! Mencoba menyambung ulang...");
     connectTikTok();
 });
 
-// --- ROUTING & SERVER LISTEN ---
+// --- ROUTING ---
 app.get('/', (req, res) => {
-    res.render('public'); // Merender views/public.ejs
+    res.render('public');
+});
+
+// Menangani error tak terduga agar server tetap menyala (Always ON)
+process.on('uncaughtException', (err) => {
+    console.error('CRITICAL ERROR:', err);
 });
 
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`
-=================================================
-🚀 WAFABOT AI SYSTEM ACTIVE
 -------------------------------------------------
-PORT       : ${PORT}
-TARGET     : @${tiktokUsername}
-STATUS     : SIAP LIVE DI RAILWAY
-=================================================
+🚀 WAFABOT SERVER RUNNING
+-------------------------------------------------
+PORT   : ${PORT}
+STATUS : ONLINE
+URL    : http://0.0.0.0:${PORT}
+-------------------------------------------------
     `);
 });
