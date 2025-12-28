@@ -14,7 +14,7 @@
             --white: #ffffff;
             --black: #000000;
             --gray: #e0e0e0;
-            --accent: #FF3D00; /* Warna aksen untuk elemen penting */
+            --accent: #FF3D00;
         }
 
         * { 
@@ -23,7 +23,7 @@
         }
 
         body {
-            background: transparent; /* Transparan agar bisa di-overlay di OBS */
+            background: transparent; /* Transparan untuk TikTok Live Studio */
             width: 100vw; height: 100vh;
             overflow: hidden;
             display: flex;
@@ -32,7 +32,7 @@
             padding: 80px 40px;
         }
 
-        /* --- NOTIFIKASI JOIN (FITUR 5) --- */
+        /* --- NOTIFIKASI JOIN --- */
         #notification-area {
             position: absolute;
             top: 150px;
@@ -101,7 +101,7 @@
         /* --- AI CARD --- */
         #ai-card-wrapper {
             width: 100%;
-            display: none; /* Sembunyi jika tidak ada aktivitas */
+            display: none; 
         }
 
         .neo-card {
@@ -137,7 +137,6 @@
             letter-spacing: -1px;
         }
 
-        /* --- TYPEWRITER CURSOR --- */
         .cursor {
             display: inline-block; width: 15px; height: 50px;
             background: var(--black); margin-left: 10px;
@@ -150,7 +149,7 @@
             50% { transform: scale(1.05); }
         }
 
-        /* Audio Overlay */
+        /* Overlay untuk unlock audio */
         #audio-overlay {
             position: fixed; inset: 0; z-index: 9999;
             background: rgba(0,0,0,0); cursor: pointer;
@@ -188,7 +187,7 @@
     </div>
 
     <script>
-        const socket = io(); // Otomatis konek ke server asal (Railway/Local)
+        const socket = io();
         const wrapper = document.getElementById('ai-card-wrapper');
         const cta = document.getElementById('cta-wrapper');
         const notifArea = document.getElementById('notification-area');
@@ -198,26 +197,22 @@
 
         let hideTimer;
 
-        // --- FITUR 5: AUTO GREETING JOIN ---
+        // Fitur 5: Sambutan Otomatis
         socket.on('userJoin', (data) => {
             const div = document.createElement('div');
             div.className = 'join-notif animate__animated animate__bounceInDown';
             div.innerHTML = `<span>👋</span> ${data.msg}`;
             notifArea.appendChild(div);
 
-            // Sembunyi setelah 3 detik
             setTimeout(() => {
                 div.classList.replace('animate__bounceInDown', 'animate__fadeOutUp');
                 setTimeout(() => div.remove(), 1000);
             }, 3000);
         });
 
-        // --- RESPONS AI (DARI ANTREAN) ---
+        // Respons AI
         socket.on('aiResponse', (data) => {
-            // Bersihkan timer lama jika ada komen baru masuk
             clearTimeout(hideTimer);
-
-            // Sembunyikan ajakan, tampilkan card
             cta.style.display = 'none';
             wrapper.style.display = 'block';
             wrapper.classList.remove('animate__fadeOutDown');
@@ -227,7 +222,6 @@
             questEl.innerText = `"${data.question}"`;
             ansEl.innerHTML = "";
 
-            // Jalankan Voice dan Mengetik
             playVoice(data.answer);
             startTypewriter(data.answer);
         });
@@ -243,17 +237,15 @@
                     ansEl.innerHTML = text.substring(0, i + 1);
                     ansEl.appendChild(cursor);
                     i++;
-                    setTimeout(type, 35); // Kecepatan mengetik
+                    setTimeout(type, 35);
                 } else {
-                    // Hilangkan kursor setelah selesai
                     setTimeout(() => { if(cursor.parentNode) cursor.remove(); }, 1000);
                     
-                    // Sembunyikan kotak setelah 15 detik SELESAI mengetik
                     hideTimer = setTimeout(() => {
                         wrapper.classList.replace('animate__fadeInUp', 'animate__fadeOutDown');
                         setTimeout(() => { 
                             wrapper.style.display = 'none';
-                            cta.style.display = 'flex'; // Munculkan ajakan lagi
+                            cta.style.display = 'flex';
                             cta.classList.add('animate__fadeIn');
                         }, 1000);
                     }, 15000);
@@ -264,7 +256,7 @@
 
         function playVoice(text) {
             if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel(); // Stop suara lama
+                window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(text);
                 utterance.lang = 'id-ID';
                 utterance.rate = 1.0;
@@ -272,7 +264,6 @@
             }
         }
 
-        // Update Viewer Count
         socket.on('viewerCount', (count) => {
             document.getElementById('view-count').innerText = count;
         });
