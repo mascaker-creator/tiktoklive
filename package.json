@@ -1,21 +1,11 @@
 {
-  "name": "wafabot-ai",
+  "name": "wafabot-tiktok",
   "version": "1.1.0",
-  "description": "TikTok Live AI Assistant menggunakan Gemini 1.5 Flash",
+  "description": "TikTok Live AI Assistant with Gemini 1.5 Flash",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
-  "keywords": [
-    "tiktok",
-    "live",
-    "ai",
-    "gemini",
-    "bot"
-  ],
-  "author": "Wafa",
-  "license": "ISC",
   "engines": {
     "node": ">=18.0.0"
   },
@@ -25,5 +15,12 @@
     "ejs": "^3.1.9",
     "socket.io": "^4.7.2",
     "tiktok-live-connector": "^1.1.0"
-  }
+  },
+  "keywords": [
+    "tiktok",
+    "live",
+    "bot",
+    "ai"
+  ],
+  "author": "Wafan"
 }
