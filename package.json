@@ -1,6 +1,6 @@
 {
   "name": "wafabot-tiktok",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "TikTok Live AI Assistant with Gemini 1.5 Flash",
   "main": "index.js",
   "scripts": {
