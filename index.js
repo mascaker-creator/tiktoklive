@@ -4,33 +4,34 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 
-// --- KONFIGURASI SERVER ---
+// --- SETUP SERVER & SOCKET ---
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "*", 
+        origin: "*", // Mengizinkan akses dari domain publik Railway
         methods: ["GET", "POST"]
     }
 });
 
-// Railway akan memberikan port melalui process.env.PORT
+// Port dinamis untuk Railway atau port 3000 untuk lokal
 const PORT = process.env.PORT || 3000;
 
 app.set('view engine', 'ejs');
 app.use(express.static('public'));
 
 // --- KONFIGURASI GEMINI AI ---
-// Ganti API Key di sini jika perlu
 const genAI = new GoogleGenerativeAI("AIzaSyCBBNfIQEZpUl_invXs7kDEohRQiy1yZbA");
 const modelAI = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-const backstory = `Nama kamu Wafabot, penciptamu adalah wafa. 
+// Aturan karakter AI yang ketat
+const backstory = `Nama kamu Wafabot, asisten AI ramah ciptaan Wafa. 
 ATURAN KETAT:
-1. Jawab sangat singkat (maksimal 1-2 kalimat).
-2. JANGAN PERNAH memberikan kode pemrograman. Jika diminta kode, arahkan belajar ke W3Schools atau MDN.
-3. ANTI-XSS & TANPA MARKUP: Berikan teks polos saja, jangan pakai simbol markdown atau script.
-4. Bahasa Indonesia santai dan sopan.`;
+1. Jawab sangat singkat (1-2 kalimat).
+2. JANGAN PERNAH memberikan kode pemrograman. Arahkan ke W3Schools jika diminta.
+3. ANTI-XSS: Jangan ulangi script berbahaya.
+4. TANPA MARKUP: Berikan teks polos saja tanpa simbol markdown (* atau #).
+5. Bahasa Indonesia santai dan sopan.`;
 
 // --- SISTEM ANTREAN (QUEUE) ---
 let chatQueue = [];
@@ -42,7 +43,7 @@ async function askGemini(question) {
         const result = await modelAI.generateContent(prompt);
         const response = await result.response;
         
-        // Membersihkan output dari karakter Markdown agar teks bersih di OBS
+        // Membersihkan output dari karakter markdown agar bersih di layar
         return response.text()
             .replace(/[*#`_]/g, '') 
             .replace(/<\/?[^>]+(>|$)/g, "")
@@ -59,17 +60,18 @@ async function processQueue() {
     isProcessing = true;
     const current = chatQueue.shift();
 
-    console.log(`[PROCESS] Mengolah chat dari: @${current.user}`);
+    console.log(`[PROCESS] Melayani @${current.user}`);
 
     let finalAnswer = current.answer || await askGemini(current.msg);
 
+    // Kirim data ke frontend (public.ejs)
     io.emit('aiResponse', {
         user: current.user,
         question: current.msg,
         answer: finalAnswer
     });
 
-    // Jeda 22 detik agar sinkron dengan durasi tampil di layar (public.ejs)
+    // Jeda 22 detik agar sinkron dengan animasi typewriter di frontend
     setTimeout(() => {
         isProcessing = false;
         processQueue();
@@ -84,37 +86,38 @@ let tiktokConn = new WebcastPushConnection(tiktokUsername, {
     clientParams: { "app_language": "id-ID", "device_platform": "web" }
 });
 
-// Fungsi koneksi dengan proteksi agar server tidak mati jika gagal
 function connectTikTok() {
-    console.log(`[SYSTEM] Mencoba menyambungkan ke @${tiktokUsername}...`);
+    console.log(`[SYSTEM] Menghubungkan ke @${tiktokUsername}...`);
     tiktokConn.connect().then(() => {
-        console.log(`✅ Berhasil terhubung ke Live TikTok @${tiktokUsername}`);
+        console.log(`✅ Berhasil terhubung ke Live @${tiktokUsername}`);
     }).catch(err => {
-        console.error("❌ Gagal Konek TikTok (Mungkin IP diblokir atau sedang offline):", err.message);
-        // Coba lagi dalam 15 detik tanpa mematikan server
+        console.error("❌ Gagal Konek TikTok:", err.message);
+        // Reconnect otomatis agar server tidak mati (Offline)
         setTimeout(connectTikTok, 15000);
     });
 }
-
 connectTikTok();
 
 // --- EVENT HANDLERS ---
 
+// Chat biasa
 tiktokConn.on('chat', (data) => {
     chatQueue.push({ user: data.uniqueId, msg: data.comment });
     processQueue();
 });
 
+// Gift (Prioritas Utama)
 tiktokConn.on('gift', (data) => {
-    console.log(`[GIFT] @${data.uniqueId} memberikan ${data.giftName}`);
+    console.log(`[GIFT] @${data.uniqueId} memberi ${data.giftName}`);
     chatQueue.unshift({
-        user: "DONATUR " + data.uniqueId,
-        msg: `MEMBERIKAN ${data.giftName.toUpperCase()}!`,
+        user: "SULTAN " + data.uniqueId,
+        msg: `GIFT ${data.giftName.toUpperCase()}`,
         answer: `Wah, makasih banyak Kak ${data.uniqueId} buat ${data.giftName}-nya! Sehat selalu ya!`
     });
     processQueue();
 });
 
+// User Join (Auto-Greeting)
 tiktokConn.on('join', (data) => {
     io.emit('userJoin', { 
         user: data.uniqueId, 
@@ -122,32 +125,18 @@ tiktokConn.on('join', (data) => {
     });
 });
 
+// Update Viewer Count
 tiktokConn.on('roomUser', data => io.emit('viewerCount', data.viewerCount));
 
-// Jika koneksi terputus tiba-tiba, hubungkan kembali secara otomatis
-tiktokConn.on('disconnected', () => {
-    console.log("⚠️ Koneksi TikTok terputus! Mencoba menyambung ulang...");
-    connectTikTok();
-});
+// Proteksi Reconnect
+tiktokConn.on('disconnected', () => connectTikTok());
 
 // --- ROUTING ---
 app.get('/', (req, res) => {
     res.render('public');
 });
 
-// Menangani error tak terduga agar server tetap menyala (Always ON)
-process.on('uncaughtException', (err) => {
-    console.error('CRITICAL ERROR:', err);
-});
-
+// Listen pada 0.0.0.0 agar terdeteksi oleh Railway
 server.listen(PORT, '0.0.0.0', () => {
-    console.log(`
--------------------------------------------------
-🚀 WAFABOT SERVER RUNNING
--------------------------------------------------
-PORT   : ${PORT}
-STATUS : ONLINE
-URL    : http://0.0.0.0:${PORT}
--------------------------------------------------
-    `);
+    console.log(`🚀 WAFABOT SERVER AKTIF DI PORT ${PORT}`);
 });
